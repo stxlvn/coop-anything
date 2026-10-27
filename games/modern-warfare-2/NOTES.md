@@ -1068,8 +1068,233 @@ Unverified: the click fix for the ice climb (a guess; its own commit, revert wit
 player's stealth in Cliffhanger (no frame), slide_sync in Escape from Favela, the other player's view of every
 rope scene.
 
+## Native split screen, one process, two local players (2026-10-26/27, 64-bit build)
+
+The two-process split screen (a second game in the same window) is replaced by one game with two client states
+swapped per frame and the picture cut top and bottom like the Xbox 360 version. Code: `src/native.c` of
+https://github.com/stxlvn/mw2_coop (not pushed yet at the time of writing), research in its
+`docs/native-splitscreen-plan.md`. Observations (all on the Steam `iw4sp.exe`, rva = address - 0x140000000):
+
+- Observed: the server already runs two local players when the player count stored by G_InitGame (rva 0x1714a6,
+  `mov dword [rip+x], 1`) is 2; the client side has one element of each array, so context 1 is run as local client 0
+  with its client statics (ranges inside 0x404450-0x44f000, 0x51b078-0x51dcb0, 0x52c400, 0x52fbc0, 0x533cb8-0x540b60,
+  0x545844, 0x548ce8) swapped in. One scene per frame (two crash the backend), the halves are kept in textures and
+  put together in the swap chain's Present.
+- Observed (render trace of one frame): shadow maps, an HDR scene target, one pass into the back buffer ending with the
+  scene's 2D (function 0x63680, called at 0x5c5bf from the scene function 0x5c240), a copy of the back buffer, a blur
+  chain, a composite, then the frame's 2D command list (function 0x5c010, called at 0x4545b). Drawing both 2D sources
+  into a per-half layer (premultiplied alpha through separate alpha blend states) and laying it over the squeezed view
+  gives text that keeps its shape.
+- Observed: the 2D screen placement is three structs of 0x70 bytes at rva 0x5e0b80 (scaleVirtualToReal,
+  scaleVirtualToFull, scaleRealToVirtual, viewport position and size, viewable and adjustable rectangles; a 16:9 screen has a
+  virtual canvas of 853.3 x 480). Setting a 1920 x height/2 viewport makes the HUD lay itself out for a half.
+- Observed: the console split screen's field of view is cg_fov 65 x cg_fovScale 0.75 (written by `maps/_load.gsc` when
+  `IsSplitScreen()` is true; the PC build's builtin at rva 0x194720 always returns 0). The view is built with the cgame's
+  aspect (rva 0x43c640) of a half and squeezed into it.
+- Observed (crash, fixed): both contexts process every snapshot and both ran the cgame's removed-entity cleanup
+  (rva 0xb9320), which frees shared per-entity objects: a second free of the same entity crashed in the pool. Also both
+  made the first-person weapon's DObjs under the same handles (0x800 + 2 * local client + hand), so a weapon change
+  crashed; context 1 now makes them as local client 1.
+- Derived: global hud texts (objective, subtitles, intro title lines) belong to the game's client 0, so both halves draw
+  them; the mod compares the two layers in a few screen bands and drops the bottom copies.
+- Unknown: how to switch player 2's weapon from a pad (the game's own `weapnext` is not a bindable button here and the
+  client's usercmd overrides a script's `SwitchToWeapon` for him); the sound listener (one); a second keyboard; the
+  32-bit build (still the two-process split screen).
+- Tested with bots and screenshots on one PC (the lobby's whole path, a mission change, a restart, pause/resume, a second
+  session in one process, long runs); not played by two people yet.
+
 ## Status
 
 Done in v0.5.0-beta: the rope and rappel scenes for two, S.S.D.D.'s gates, Team Player's swap, Cliffhanger's
 snowmobile and climb views, Russian fonts, an experimental 32-bit archive. Next: a real two-person playthrough of the new
 scenes, lip sync (off on both screens), the nrend anim_loop error, the Museum for player 2, split screen.
+
+## iw4x-sp support: feasibility (2026-10-25, research only, nothing run)
+
+Goal: run the mod on top of the iw4x-sp client (AlterWare, the open-source MW2 2009 singleplayer client) as it runs on the
+official game. Sources: iw4x-sp source (GPL-3.0, reference only, local copy outside the repo;
+https://git.alterware.dev/alterware/iw4x-sp, archived 2026-09-04), install guide
+https://forum.alterware.dev/t/iw4x-singleplayer-install-guide/383, and the 1.0.159 exe of the COD-MOD pack
+(`iw4sp_codmod.exe`, read as a file, never run).
+
+Observations (read in files, not run):
+- iw4x-sp is **32-bit only** (README: "Only the Win32 platform is supported"). `iw4x-sp.exe` is a *loader*, not a patched
+  game: `main.cpp` reads `iw4sp.exe` (or `data/iw4sp.exe`) from the game folder, requires its SHA-256 to be one of two values
+  (`39E9C4FA...3D32`, `9480909B...3565`; `binary_loader.cpp`), copies its sections into its own image (fixed base 0x400000, a
+  160 MB payload area, `/DYNAMICBASE:NO`), resolves its imports (`steam_api.dll` from its own exports = a Steam emulation, every
+  other DLL through `LoadLibrary`), replaces the PE headers in memory with the game's, then runs the game's entry point. Its
+  components patch the game in `post_load`, after the mapping.
+- Install (AlterWare guide): into the **Steam game folder** put `iw4x-sp.exe` and the 1.0.159 `iw4sp.exe`
+  (`master.alterware.dev/iw4/data/iw4sp.exe`, overwrites Steam's exe); start `iw4x-sp.exe`, never Steam. The data (zones, iwds)
+  are the Steam files; iw4x patches "ignore zone version mismatch" (0x4256D8) so the 159 exe reads the newer 32-bit Steam zones.
+- The 159 exe is **not** our official 32-bit build: the 159 exe is linked 2009-11-07 (COD-MOD's copy: file SHA-256
+  `56D6E8F2...F865`, which is neither iw4x hash), ours 2010-02-10 (code hash `FC9E4843...52D7`). The code is the same
+  functions in a different link order: every function body compared has the same bytes at other addresses.
+- The 159 exe imports `WINMM.dll` (timeGetTime, timeBeginPeriod, timeEndPeriod), like ours.
+- iw4x-sp's `symbols.hpp` is a table for exactly the 159 exe: 16 addresses I derived independently (below) equal its values.
+  About 100 of its patch sites checked in the COD-MOD copy of 159: every `jz/jnz -> jmp` patch lands on a 0x7x opcode, every hooked
+  call on 0xE8, so that copy has iw4x's layout (code identical or nearly).
+- iw4x does not touch the first 64 bytes of any function we hook (checked against every 6-digit address literal in its source).
+
+Derived (byte matching, not tested in a running game): the address profile "159" below. Method: the first 16-96 bytes of each
+official function from `image32.bin`, call targets and absolute addresses wildcarded, searched in the 159 `.text` (one hit =
+match); data addresses from the operand of the code references of the official address (vote over up to 40 references).
+Cross-checked with iw4x `symbols.hpp`: Cbuf_AddText, Cmd_AddCommand, Sys_Milliseconds, Scr_AddSourceBuffer, DB_FindXAssetHeader,
+DB_IsXAssetDefault, DB_GetRawFileLen, DB_GetRawBuffer, Hunk_AllocateTempMemoryHigh, DB_LoadXAssets, Scr_Error, Scr_GetString,
+cmd_args, sv_cmd_args, g_entities, the pool tables, uiInfoArray: all equal. (`Dvar_FindVar`: iw4x's 0x4B29D0 is the cdecl
+wrapper, the usercall body we call is 0x635C50.)
+
+| What | official 32-bit (VA) | 159 / iw4x-sp (VA) |
+|---|---|---|
+| Cbuf_AddText | 0x409B40 | 0x4A1090 |
+| Cmd_AddCommand | 0x428090 | 0x4478A0 |
+| Dvar_FindVar (usercall body) | 0x633480 | 0x635C50 |
+| Sys_Milliseconds | 0x44E1B0 | 0x44E130 |
+| Party_Reset / Party_ClearMembers | 0x42F0F0 / 0x4B82F0 | 0x4D43A0 / 0x466830 |
+| Lobby_Join / PartyClient_Join | 0x492E80 / 0x42FC40 | 0x407A20 / 0x454190 |
+| Party_Activate / Party_AfterJoin | 0x45DDE0 / 0x419810 | 0x414550 / 0x45B250 |
+| CoopLaunchMap / Lobby_SlotUsed | 0x47BD80 / 0x435FF0 | 0x4B1E40 / 0x4BEAD0 |
+| Scr_AddSourceBuffer (cdecl wrapper) | 0x47F8E0 | 0x4173C0 |
+| DB_FindXAssetHeader / DB_IsXAssetDefault | 0x4F6F10 / 0x4C32B0 | 0x40B200 / 0x41AB70 |
+| DB_GetRawFileLen / DB_GetRawBuffer | 0x4E3080 / 0x4E55F0 | 0x4D2E60 / 0x4345E0 |
+| Hunk_AllocateTempMemoryHigh / Scr_GetString | 0x40EED0 / 0x4D5F20 | 0x403B40 / 0x4D39C0 |
+| level zone loader / DB_LoadXAssets | 0x4D0450 / 0x49EDB0 | 0x418CE0 / 0x4CFC90 |
+| script error handler / Scr_Error | 0x612F50 / 0x457AE0 | 0x615790 / 0x4E9C50 |
+| devmap handler (server command) | 0x659780 | 0x65BEF0 |
+| net_port `push 28960` immediates | 0x48C5F7, 0x63908F | 0x494E27, 0x63B87F |
+| cmd_args / sv_cmd_args / cmd_functions | 0x144C950 / 0x1457620 / 0x144C9D8 | 0x144FED0 / 0x145ABA0 / 0x144FF58 |
+| devmap server node | 0x1A6AB98 | 0x1A6E110 |
+| xuid table | 0x19FBF88 | 0x19FF508 |
+| party: lobby ptr / is_host / active / launch / start_time | 0x934450 / ..48 / ..49 / ..4B / ..4C | 0x9379D8 / 0x9379D0 / ..D1 / ..D3 / ..D4 |
+| party: skill, member names (stride 0x38) | 0x934480, 0x934458 | 0x937A08, 0x9379E0 (names = is_host + 0x10, by offset, not matched) |
+| coop slot state | 0x925BC0 | 0x929148 |
+| asset pool sizes / pools | 0x730510 / 0x7307F8 | 0x733510 / 0x7337F8 |
+| g_entities (0x270 per entity) | 0xEA76B8 | 0xEAAC38 |
+| uiContext (menus +0x38, count +0xA38) | 0x191CEF0 | 0x1920470 |
+| builtin entry "setdvar" | 0x731504 | 0x734504 |
+| method entries setactionslot, setoffhandsecondaryclass, givemaxammo, givestartammo, setthreatbiasgroup | 0x6E8EC4, 0x6E8D14, 0x6E8C18, 0x6E8C0C, 0x6EB140 | 0x6EBDE4, 0x6EBC34, 0x6EBB38, 0x6EBB2C, 0x6EE030 |
+| script error message ptr / flag A / flag B | 0x18E3F90 / 0x18E3F8F / 0x1588A34 | 0x18E7510 / 0x18E750F / 0x158BFB4 |
+
+Not mapped yet (debug aids only): crash.c's database-hang addresses (0x9D7C80, 0xC3E85C, 0xA961A4). Structure layouts do not
+change (dvar_t, cmd_function_t, usercmd, menu and item defs: the uiContext offsets +0x38/+0xA38 and menuDef itemCount match iw4x's
+static asserts for the same 32-bit structs). The helper scripts that produced the table are in the shared notes folder of the
+session (`derive159/`).
+
+What differs for our DLL on iw4x (derived from source):
+1. **Identity.** The code-section hash cannot be the build's identity: iw4x patches hundreds of bytes of `.text` in memory.
+   Use the SHA-256 of the `iw4sp.exe` file next to the host (the host's name `iw4x-sp.exe` is the trigger) plus the byte checks
+   every hook already does.
+2. **Load order.** The proxy is loaded while iw4x resolves the game's `WINMM.dll` import, so DllMain runs from inside the
+   loader; the game's sections are already in memory and unwrapped (no Steam wrapper), so the `net_port` immediates can be
+   patched in DllMain (they cannot on the official 32-bit exe). Our identify thread runs about 3 s after the window: after all
+   iw4x patches.
+3. `GetModuleHandleA(NULL)` = 0x400000 and the game's IAT stay valid (the headers are replaced by the game's), so `net.c`'s
+   WSOCK32 ordinal hooks should work as they are.
+
+Overlaps with our modules (what iw4x patches or replaces that we also touch):
+- `scripts.c` (Scr_AddSourceBuffer): **no clash.** iw4x does not hook it. It adds its own loose GSC loading (`scripts/*.gsc`,
+  `scripts/sp/<map>`, hooks at 0x4054C2 and 0x4C1E34) and a `DB_ReadRawFile` (0x46DA60) that prefers loose files; a separate
+  path. Our patches apply to the zone's script text as before (same zone data).
+- `scrdebug` (Scr_Error, error handler): iw4x's `gsc/error.cpp` rewrites script error printing (hooks 0x43ACE0, 0x612470, 0x4767A0,
+  the runtime-error call sites in the VM) but not our two hook points. Low risk; the first run decides.
+- `zones.c`: iw4x does not touch the level zone loader. It hooks the `DB_LoadXAssets` *call* at 0x50B637 to append a `mod` zone and
+  enlarges the XAssetEntry table (789,312 entries): good for us (extra Spec Ops zones). It reallocates only the `gameworld_mp` pool;
+  our loaded_sound pool extension works on the same tables.
+- `net.c` (WSOCK32 sendto/recvfrom): no clash, but iw4x changes what the game does with ports and addresses: removes BigShort in
+  NET_AdrToString and GetLocalAddressForEncryptedConnection, replaces the console `connect` by its own `connect <ip> <port>`
+  (does `htons`, runs `connect_coop`), disables IWNet and the LSP, ignores the protocol mismatch, `MAX_PACKET_USERCMDS` and the
+  XUID match. So `party.c`'s `connect <ip> <byte-swapped port>` has to become `connect <ip> <port>` on iw4x; the port and host-info
+  fields of the party need a test; two copies on one Steam account would not need the XUID shift.
+- `party.c` (PartyClient_Join, Lobby_Join): same functions. iw4x makes the online gate pass (`Steam_IsClientSignedInLocally` hook at
+  0x43FAF0, "Steam must be running" patch, matchmaking off). Probably easier than on the official game, untested.
+- `menus.c`: iw4x's `ui.cpp` replaces the menu list loaders (0x62DDD0, 0x621194): loose `.menu` text first, the zone's menu list as
+  the fallback. Without loose menus the zone menus are what we change in memory today. The uiContext layout is the same.
+- `fov.c` and the script `setdvar` wrapper (`control.c`): iw4x blocks scripts from setting `cg_fov`/`cg_fovScale` (hooks at call sites
+  inside GScr_SetSavedDvar and GScr_SetDvar, 0x5D7818, 0x5CC8D9): the Predator's zoomed view will not change the field of view
+  (harmless). iw4x also removes the dvar read-only, cheat, write-protect and latch checks.
+- Steam: iw4x emulates `steam_api` (the id comes from a key generated per machine in %APPDATA%). There are no Steam friend invites
+  there: join by address only. `steamnet` is a stub in 32-bit already.
+
+Unknown (needs a running iw4x copy):
+- whether the proxy `winmm.dll` next to `iw4x-sp.exe` is found by `LoadLibrary("WINMM.dll")` (expected yes: not a KnownDLL, the exe
+  folder is searched first, and iw4x's source sets no restrictive DLL search path);
+- whether iw4x's own `iw4sp.exe` (the hashes in its source) has the same code as COD-MOD's 159 exe, from which the table was derived;
+- whether a 159 session agrees in lockstep with an official 184 or 64-bit session (cross play): the script text is the same, the
+  engine differences between 159 and 184 are not known to us;
+- how iw4x's `connect_coop`/BigShort changes act on our party join, and whether the Spec Ops lobby menus open without Steam;
+- whether the XUID of two iw4x copies on one PC differs (it comes from a per-machine key: probably the same).
+
+Guesses: the port is small because iw4x changes mostly the online layer and adds optional features.
+
+### iw4x-sp first run: the DLL loads (2026-10-25, test copy `D:\coop-test\mw2-iw4x`)
+
+Observations (this ran):
+- Downloaded from the pages the AlterWare forum guide names, into an empty folder: `https://master.alterware.dev/iw4/data/iw4sp.exe`
+  (3,513,944 B, SHA-256 `9480909B18CF5A4EC483C989AAFCE929D2172C5F9448F8C23B723683D1A43565` = `SP_ALTER_HASH` in
+  `binary_loader.cpp`) and `https://master.alterware.dev/iw4/iw4x-sp.exe` (1,489,408 B, SHA-256
+  `8BA01F52AE5075EF9FCF8BEBF0C2335B66015EB15AEE72E0C633AE2B87075043`; no published hash to check it against).
+- That `iw4sp.exe` has PE link time 2009-11-07 and a `.text` identical to COD-MOD's 159 exe except 2 bytes (0x604084: `90 90` vs
+  `74 0a`), so the derived address table above comes from the right code.
+- Test copy = the 32-bit test copy's data and our 32-bit `winmm.dll` (the current build, unchanged), with Steam's `iw4sp.exe`
+  replaced by the 159 one and `iw4x-sp.exe` added. Started `iw4x-sp.exe` (no Steam launch). It ran 25 s without a crash dialog.
+- `mw2coop.log`: `32-bit proxy attached`, `proxy: real winmm at 757D0000, 192 exports, 0 missing`, then
+  `game window ... after 2969 ms`, `image base 00400000, code sections 2695855 bytes, SHA-256 2706C3C3...80B3E2`,
+  `unknown build: nothing is patched` (the expected answer: no iw4x profile yet). So `LoadLibrary("WINMM.dll")` of iw4x finds the
+  proxy next to `iw4x-sp.exe`, the IAT/image base assumptions hold, the game window has class `IW4` as before.
+- The code size 2,695,855 = the 159 `.text` size; the hash differs from a clean exe because iw4x has patched it in memory, so the hash
+  is not a stable identity (it changes with the iw4x-sp.exe build). Use the file hash of `iw4sp.exe` instead (see above).
+
+Not checked: any hook (nothing is patched yet), the lobby, a session, the order of DllMain against the game's unpacking
+(the code is plain in this exe, so presumably the game code is already mapped when the proxy attaches).
+
+### iw4x-sp: first co-op session on two iw4x copies (2026-10-25)
+
+Observations (this ran; `MW2COOP_IW4X=1 sh deploy.sh`, `MW2COOP_IW4X=1 sh tools/qa_pair.sh bay "" 35 trainer`, copies
+`D:\coop-test\mw2-iw4x` and `mw2-iw4x-b`):
+- A build flag `MW2COOP_IW4X` (`sh build.sh x86 iw4x` -> `build/x86-iw4x/winmm.dll`) selects the 1.0.159 address profile
+  (`game.h` and the per-file 32-bit tables of zones, settings, mirror, menus, transplant, localize, scrdebug32) and identifies the
+  build by the SHA-256 of `iw4sp.exe` next to the client (`main32.c`). The official 32-bit and 64-bit builds still build.
+- All hooks installed on the first run (script hook, zone loader, localize, scrdebug, mirror, party and progress commands, menus,
+  control); the lobby buttons were added; `listen`, `coopLaunch` and `mw2coop_join` worked: both copies loaded `trainer` with `coop 1`.
+- **The script hook was not reached** in the first pair run: no `scripts: ... patches` line, the level ran unpatched, so the
+  second player was the engine's default one (appeared behind player 1, "unknown soldier", the default weapon; the log had
+  `Unknown weapon name "mp5"`). Cause: iw4x's `gsc/error.cpp` replaces the loader of scripts (`load_script_internal_stub`, patched into
+  Scr_LoadScript and ScriptCompile) with its own that never calls `Scr_AddSourceBuffer`; it reads the rawfile through
+  `DB_FindXAssetHeader`, `DB_IsXAssetDefault`, `DB_GetRawFileLen`, `Hunk_AllocateTempMemoryHigh`, `DB_GetRawBuffer`.
+- Fix (`scripts.c`, `MW2COOP_IW4X` only): hook `DB_GetRawFileLen` and `DB_GetRawBuffer` and serve the mod's text for `*.gsc` rawfiles
+  (patched zone text built from the real rawfile on its first length request; our own scripts through a made-up rawfile returned by
+  the `DB_FindXAssetHeader` hook in `localize.c` and accepted by the `DB_IsXAssetDefault` hook in `transplant.c`). Result: the same
+  patch lines as on the official build, **every patched script's FNV hash equal to the official 32-bit build's** (`_utility` 8f334800,
+  `_gameskill` a2a4e145, `_spawner` ce616b32, `_load` 0fafe0d4, `_coop` 68eee708, `_loadout` 127e068b, `_introscreen` 5e8a045f,
+  `trainer` a6c2b774, ...), `bay` PASS 5/5 on both copies, "player 2 weapons copied from player 1", no `mp5` errors.
+- `party.c`: on iw4x `connect <ip> <port>` takes the plain port (iw4x swaps it); that join worked.
+
+Open / not checked:
+- One script error remains in each copy: `Invalid Dvar set: scr_damagefeedback - Internal Dvars cannot be changed by script`
+  (game script `maps/_damagefeedback.gsc` init; iw4x registers that dvar itself as a bool). It only stops that init (hit markers);
+  not ours. Not checked on a vanilla iw4x campaign.
+- Only `trainer`, `bay`, no human playtest, no screenshot of player 2's look/name in the iw4x pair (a screenshot attempt got the wrong
+  window); cross play iw4x <-> official 32-bit / 64-bit not run; split screen, saves, other levels not run; `shot.c` stays a stub.
+- A first single-player `devmap trainer` on a plain iw4x (no DLL) crashed with 0xC0000005 when given as a command-line `+devmap`
+  (not investigated: iw4x itself, not our DLL).
+- The runtime profile (one DLL for both clients) is not done: the iw4x DLL is a separate build, selected at compile time.
+
+### iw4x-sp: wider checks (2026-10-25)
+
+Observations (all ran, bots, one PC; `tools/qa_pair.sh` takes `MW2COOP_DIR_A` / `MW2COOP_DIR_B` now, `run_test.ps1` starts `iw4x-sp.exe` in a folder that has it):
+- Cross play `bay` on `trainer`, PASS 5/5 on both copies in all four pairings: iw4x host + official 32-bit client, official 32-bit host + iw4x
+  client, iw4x host + 64-bit client, 64-bit host + iw4x client.
+- Two iw4x copies against two official 32-bit copies, same scenarios on `trainer`: `spawn` 18 PASS / 0 FAIL on both, `buttons` 22 / 0 on both,
+  `pickups` 30 / 0 on both, `course` 10 PASS / 2 FAIL on both (the same two lines, "the entrance gate closes once both are upstairs": a failure of
+  the scenario in the official 32-bit build as well, not iw4x's). No script errors in any of them.
+- The look of player 2 on the iw4x client (`look` scenario, window frames with `tools/capture_pair.ps1`): the co-op body `coop_body_us_army`
+  (ACU camouflage, helmet, goggles), as in the official build; the name tag above him is "Unknown Soldier" because iw4x's `name` dvar defaults
+  to that (`players/iw4x_sp_config.cfg`: `seta name "Unknown Soldier"`); the official build shows the Steam name. Both iw4x copies have the same
+  name. Not a bug of the mod; the player sets `name <nick>` (console) or the config. Frames: `local/shots/iw4x/`.
+- The official 32-bit pair hung at the level load in 3 of about 12 starts today (`hang-reports/`, the known intermittent database hang); no iw4x pair
+  hung in about 10 starts.
+
+Open:
+- In the window captures of the iw4x pair the host's window showed the main menu and then black while the client's showed the level (the logs of
+  both say the level runs); the official pair's windows both rendered. Probably the capture technique (a topmost window at the same position),
+  not proven; look at the host's window of an iw4x pair by eye.
