@@ -7517,18 +7517,20 @@
     hosted and joined from the game's menus (lobby, LAN list, address, Steam invite, optional Steam relay), or split screen on
     one PC (one process, two client contexts, also without internet and in Special Ops). Every set piece is reworked for two
     players (S.S.D.D., Team Player, Wolverines!, the rope and rappel scenes, Takedown's car, Cliffhanger's climb and snowmobiles,
-    No Russian, Second Sun, Loose Ends' betrayal, Endgame's boat and knife fight, the Museum); enemies fight both players, both
-    play the difficulty the host picks, friendly fire is a lobby switch and every level has checkpoints. Also a Settings >
+    No Russian, Second Sun, Loose Ends' betrayal, Endgame's boat and knife fight, the Museum); enemies fight both players, online
+    both play the host's difficulty (each his own in split screen), friendly fire is a lobby switch and a failed mission goes back
+    to a checkpoint. Also a Settings >
     Enhanced page, a developer console, FSR 1 / FSR 3 / DLSS upscalers and, experimental and off by default, the mod's own
     Direct3D 11 and 12 renderers. QA is automated on two copies (bots fail every section of every campaign mission and check the
-    restart, a bot tour of all 19 levels, split screen with simulated gamepads, 8 campaign maps on each native renderer); two people
-    played the story on two PCs up to and including No Russian; the rest was checked by bots and nobody has played the whole
-    campaign through together yet. Write-up in games/modern-warfare-2.
+    restart, a bot tour of all 19 levels, split screen with simulated gamepads, 8 campaign maps on each native renderer); the
+    developer and a friend played the campaign through together on older builds, not every mission in full. On main since v1.0.1,
+    split screen like the Xbox 360 in every build, the game's own checkpoints, independence from the game build. Write-up in
+    games/modern-warfare-2.
   sources:
   - https://github.com/stxlvn/mw2_enhanced
   - https://github.com/stxlvn/mw2_enhanced/releases/tag/v1.0.1
   - https://github.com/cranebeaker/coop-anything/tree/main/games/modern-warfare-2
-  checked: '2026-11-13'
+  checked: '2026-11-18'
   made_with_coop_anything: true
 - game: Celeste
   year: 2018

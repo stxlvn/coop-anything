@@ -3,10 +3,10 @@
 | | |
 |---|---|
 | Engine | IW 4.0 (closed; id Tech 3 derived) |
-| Versions tested | Steam app 10180, build 25374375 (the 64-bit update of September 2026): `iw4sp.exe` x64, PE timestamp `0x6aaaa257`, SHA-256 `2F8C9CFDA1B8C0FB308FD9719577154E8222FC7654F5E8F1BF54579BCA69D805`, `version` dvar `IW4 2.0 build 14 Fri Oct 03 16:56:21 2025 win64`, Russian language set |
+| Versions tested | Steam app 10180, build 25374375 (the 64-bit update of September 2026): `iw4sp.exe` x64, PE timestamp `0x6aaaa257`, SHA-256 `2F8C9CFDA1B8C0FB308FD9719577154E8222FC7654F5E8F1BF54579BCA69D805`, `version` dvar `IW4 2.0 build 14 Fri Oct 03 16:56:21 2025 win64`, Russian language set; the older 32-bit build and the iw4x-sp client (its `iw4sp.exe` 1.0.159) through the project's `-x86` archive |
 | Projects | [Modern Warfare 2 Enhanced](https://github.com/stxlvn/mw2_enhanced) (formerly mw2_coop; campaign co-op over the network and split screen on one PC, v1.0.1, MIT); COD-MOD 3.223 campaign co-op pack (32-bit, 2020, abandoned) |
-| QA level | automated (two game copies on one PC, in-game scripted checks of the reworked set pieces, bots that fail every section of every campaign mission and check the restart, a bot tour of the start points of all 19 levels, split screen sessions with simulated gamepads, 8 campaign maps on each of the mod's own DirectX 11 and 12 renderers; the campaign has not been played through end to end by people) |
-| Last updated | 2026-11-13 |
+| QA level | automated (two game copies on one PC, in-game scripted checks of the reworked set pieces, bots that fail every section of every campaign mission and check the restart, a bot tour of the start points of all 19 levels, split screen sessions with simulated gamepads, 8 campaign maps on each of the mod's own DirectX 11 and 12 renderers; the campaign has been played through by two people, the developer and a friend, on older builds and not every mission in full) |
+| Last updated | 2026-11-18 |
 
 ## Where things stand
 
@@ -19,17 +19,25 @@ players: S.S.D.D. (each takes his own weapons), Team Player's convoy, the Humvee
 Wolverines! (ladders and the Predator laptop too), the rope and rappel scenes (the Gulag's cellblock rope and evacuation, Just Like Old Times' opening
 rappel, Escape from Favela's big jump and chopper ladder), the Only Easy Day's escape little bird, Takedown's car, The Only Easy Day's swim and stealth kill, Cliffhanger's ice climb
 and snowmobiles, No Russian's elevator, cover and ending, the crash site and ISS of Second Sun,
-Loose Ends' betrayal, Endgame's boat chase and the final knife fight, the Museum epilogue. Enemies fight both players; both play the
-difficulty the host picks, with a lobby switch for friendly fire and checkpoints in every
-level. Bots toured the start points of all 19 levels on two copies (results in
-[NOTES.md](NOTES.md)) and fail every section of every campaign mission to check the restart. Two people
-have played parts of the story on two PCs over the internet, from the start up to and including
-No Russian; the missions after it were checked by bots only, and nobody has played the whole campaign through together yet.
-Since v0.5.0 the project also got: split screen (one process, two client contexts, an own compositor), a Settings > Enhanced page in the game's menu,
-a developer console, FSR 1, FSR 3 and DLSS upscalers, one 32-bit archive for the older 32-bit game and the iw4x-sp client, and, as an experiment
+Loose Ends' betrayal, Endgame's boat chase and the final knife fight, the Museum epilogue. Enemies fight both players; online both play the
+difficulty the host picks (in split screen each player picks his own), with a lobby switch for friendly fire; a failed mission goes back to the game's
+own last checkpoint, as in single player (64-bit and iw4x-sp). Bots toured the start points of all 19 levels on two copies (results in
+[NOTES.md](NOTES.md)) and fail every section of every campaign mission to check the restart. The developer and a friend
+have played the campaign through together, on older builds and not every mission in full; the developer's bug reports come from those sessions.
+Since v0.5.0 the project also got: split screen (one process, two client contexts, each player drawn in a renderer frame of his own as on the Xbox 360), a Settings > Enhanced page in the game's menu,
+a developer console, FSR 3 and DLSS upscalers (FSR 1 too, removed again on `main`), one 32-bit archive for the older 32-bit game and the iw4x-sp client, and, as an experiment
 (off by default, 64-bit), **the mod's own Direct3D 11 and Direct3D 12 renderers** in place of the game's Direct3D 9 back end (see "What we changed").
 The older COD-MOD campaign co-op pack only runs on the 32-bit build that the 2026 update
 replaced, and players who tried it found it rough.
+
+**On `main` since v1.0.1 (not released yet, 2026-11-18):** the split screen draws each player in his own renderer frame in every build (the
+older alternate-frame modes 1-10 were removed from the code), Spec Ops runs in it with the console game's split-screen HUD, each player has his own
+difficulty there, and the console's own view boxes are an option; failed missions load the game's own last checkpoint and "Continue" resumes it with the
+same partner; the partner's body stands in for the first-person rig on the ropes of Just Like Old Times and the Gulag's cellblock (on the Favela ladder and the
+Gulag evacuation the second pair of arms is hidden), and he holds the knife in his left fist in Endgame; player 2's mouse look and his shell shock blur in split screen were fixed; gamepads other than Xbox pads
+(PlayStation, Switch, 8BitDo) through SDL 3; and the mod no longer depends on one game build: every address goes through a resolver, other builds are
+handled by byte signatures (64-bit 477 of 477, 32-bit 415 of 415 found on the reference builds; the iw4x-sp exe with moved code 370 of 415), and a feature
+whose addresses were not found turns itself off. FSR 1 was removed; with FSR 3 or DLSS the picture is now upscaled when the frame's 2D starts, after the late 3D effects (the partner had looked see-through in dust), and the DLSS bridge, which links NVIDIA's static library, is packed as a separate release archive while the README names the official sources of AMD's and NVIDIA's DLLs. Details in the project's [changelog](https://github.com/stxlvn/mw2_enhanced/blob/main/CHANGELOG.md).
 
 ## Existing work
 
@@ -328,18 +336,18 @@ the list, by address or by Steam invite; on one PC: Campaign -> Split screen.
 ## Known issues
 
 The project's [README](https://github.com/stxlvn/mw2_enhanced#known-issues) keeps the full list; the ones that matter here:
-- Nobody has played the whole campaign through together yet; two people played the story up to and including No Russian, the rest and the scenes added since v0.5.0 were checked by bots on two copies.
+- The campaign was played through by two people (the developer and a friend) on older builds, not every mission in full; scenes reworked since then were checked by bots on two copies.
 - Slow motion shows on both screens, whoever triggers it (one game clock for both PCs).
-- Checkpoints: bots fail every section of every campaign mission and check that the level starts again with both players up and together (all pass); a restart goes to the level's own checkpoint, which is sometimes the section before the one you died in. Not tried by two people.
-- Rarely (once in about a hundred mission loads, 32-bit build) both PCs hang right after a mission starts; the stacks point at the graphics driver, not proven.
-- Split screen: tested with bots, screenshots of both halves and simulated gamepads, not with two real gamepads or by two people; XInput pads only; no second keyboard; the second player can only pause.
+- Checkpoints: in v1.0.1 a restart goes to the level's own checkpoint, which is sometimes the section before the one you died in (bots fail every section of every mission: all pass). On `main` a failed mission loads the game's own last checkpoint (64-bit and iw4x-sp; the official 32-bit exe quits on loading a save with the mod in, so it keeps the level restart).
+- Rarely (once in about a hundred mission loads, 32-bit build) both PCs hung right after a mission started; a cause was found and fixed on `main`, and about 70 bot mission loads since had none.
+- Split screen: tested with bots, screenshots of both halves and simulated gamepads, played by the developer and a friend and by a tester (Spec Ops, a gamepad and the mouse); no second keyboard and mouse; on `main` the second player's pad works the menus and PlayStation / Switch pads go through SDL 3 (not tried with a real PlayStation pad yet).
 - Co-op and split screen without internet (LAN, direct IP): fixed in v1.0.1 (issue 21), checked only with the sign-in faked off, not on a really offline PC.
-- The mod's own DirectX 11 / 12 renderers and the upscalers are experimental: bot-checked on 8 campaign maps each, not played by people; DLSS has not run on a real card; on the tested laptop FSR 3 does not beat the plain native resolution in speed.
+- The mod's own DirectX 11 / 12 renderers and the upscalers are experimental: bot-checked on 8 campaign maps each, not played through a mission by people; DLSS ran on an RTX 3060 Laptop (Trainer, 2026-11-17); on the tested laptop FSR 3 does not beat the plain native resolution in speed.
 - Steam overlay plus Discord overlay together crash after the game recreates its graphics device (both hook the same Direct3D 9 calls); turn one off.
 
 ## Next steps
 
-- Play the campaign through together end to end, and the newer scenes with two people.
-- Split screen with two real gamepads and two people; DLSS on a real card.
+- Play the scenes reworked since the first play-through with two people, on the current build.
+- Release what is on `main` (split screen like the Xbox 360 in every build, the game's own checkpoints, build independence).
 - The native renderers: play missions on them, then decide whether to make one the default.
 - Check whether MW3 (2011) `iw5sp.exe` carries the same co-op netcode.
